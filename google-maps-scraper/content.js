@@ -212,8 +212,11 @@
     
     if (!scrollContainer) {
       updateStatus('No scrollable content found. Try searching for restaurants.', 'warning');
+      console.log('[Scraper] No scroll container found. Make sure you have search results visible.');
       return;
     }
+
+    console.log('[Scraper] Found scroll container:', scrollContainer.className);
 
     // First, scroll to load initial content with human-like delay
     updateStatus('Loading initial results...', 'info');
@@ -221,7 +224,8 @@
     await randomDelay(2000, 4000);
 
     // Extract restaurants from current view
-    await extractVisibleRestaurants();
+    let found = await extractVisibleRestaurants();
+    console.log(`[Scraper] Initial extraction found ${found} restaurants`);
 
     // Continue scrolling and extracting with anti-detection
     let lastCount = scrapedRestaurants.size;
@@ -255,44 +259,66 @@
         const newHeight = scrollContainer.scrollHeight;
         if (newHeight === previousHeight || newHeight === lastScrollHeight) {
           noProgressCount++;
-          consecutiveErrors++;
+          console.log(`[Scraper] No new content loaded (attempt ${noProgressCount}/5)`);
           
-          // Apply backoff on consecutive failures
-          if (consecutiveErrors >= TIMING_CONFIG.consecutiveFailThreshold) {
-            updateStatus('Rate limit detected. Waiting...', 'warning');
-            await delay(Math.min(currentBackoff * 2 || TIMING_CONFIG.rateLimitBackoff, TIMING_CONFIG.maxBackoff));
-            consecutiveErrors = 0;
+          // Try clicking "load more" if available
+          const loadMoreBtn = document.querySelector(SELECTORS.loadMore);
+          if (loadMoreBtn) {
+            console.log('[Scraper] Clicking load more button');
+            loadMoreBtn.click();
+            await randomDelay(1000, 2000);
+          }
+          
+          if (noProgressCount >= 3) {
+            // Try a longer wait
+            updateStatus('Waiting for more content...', 'info');
+            await randomDelay(3000, 5000);
+          }
+          
+          if (noProgressCount >= 5) {
+            console.log('[Scraper] No progress after 5 attempts, stopping');
+            break;
           }
         } else {
           noProgressCount = 0;
-          consecutiveErrors = 0;
           lastScrollHeight = newHeight;
           
           // Extract newly visible restaurants
-          await extractVisibleRestaurants();
+          found = await extractVisibleRestaurants();
+          console.log(`[Scraper] Batch extraction found ${found} new restaurants`);
           
           if (scrapedRestaurants.size > lastCount) {
             lastCount = scrapedRestaurants.size;
-            updateProgress(scrapedRestaurants.size, scrapedRestaurants.size + 20); // Estimate
+            updateProgress(scrapedRestaurants.size, scrapedRestaurants.size + 20);
           }
         }
+        
+        scrollAttempts++;
+        consecutiveFailures = 0;
+        
       } catch (error) {
-        console.error('Scroll error:', error);
+        console.error('[Scraper] Scroll error:', error);
         consecutiveErrors++;
+        
+        if (consecutiveErrors >= 5) {
+          updateStatus('Too many errors. Stopping.', 'error');
+          break;
+        }
+        
         await randomDelay(1000, 3000);
       }
-      
-      scrollAttempts++;
     }
 
     // Final extraction pass
+    updateStatus('Finalizing...', 'info');
     await extractVisibleRestaurants();
-
-    // Save results
-    await saveResults();
     
+    console.log(`[Scraper] Complete. Total restaurants: ${scrapedRestaurants.size}`);
     updateStatus(`Complete! Found ${scrapedRestaurants.size} restaurants`, 'success');
     updateProgress(scrapedRestaurants.size, scrapedRestaurants.size);
+    
+    // Save results
+    await saveResults();
   }
 
   function findScrollContainer() {
@@ -360,6 +386,9 @@
 
   async function extractVisibleRestaurants() {
     const restaurantCards = findAllRestaurantCards();
+    let newFound = 0;
+    
+    console.log(`[Scraper] Processing ${restaurantCards.length} restaurant cards`);
     
     // Process cards in batches with random delays to avoid detection
     for (let i = 0; i < restaurantCards.length; i += BATCH_SIZE) {
@@ -381,7 +410,10 @@
           if (!scrapedRestaurants.has(key)) {
             scrapedRestaurants.add(key);
             totalRestaurantsFound++;
+            newFound++;
             restaurant.scrapedAt = new Date().toISOString();
+            
+            console.log(`[Scraper] Found: ${restaurant.name}`);
             
             // Send to background for storage with slight random delay
             await delay(50 + Math.random() * 100);
@@ -402,6 +434,8 @@
         await randomDelay(200, 500);
       }
     }
+    
+    return newFound;
   }
 
   // Simulate user interaction (hover/focus) to appear more human-like
@@ -430,21 +464,57 @@
   function findAllRestaurantCards() {
     const cards = [];
     
-    // Look for restaurant list items
-    const listItems = document.querySelectorAll('[role="listitem"], .rsselect, .hfpxzc, .VkpGBc');
-    listItems.forEach(item => {
-      if (item.offsetParent !== null) { // Visible element
-        cards.push(item);
-      }
+    // Primary selectors for restaurant list items in search results
+    const primarySelectors = [
+      '[role="listitem"]',
+      '.hfpxzc',  // Common restaurant card class
+      '.VkpGBc',  // Another common card class
+      '.rsselect', // Selectable restaurant item
+      '[data-lid]', // List item data attribute
+      '.a68cld',  // Grid item
+      '.NReXi',   // Another grid variant
+      '.TTcmUC',  // Grid container item
+      'div[jsaction*="click"]' // Clickable divs
+    ];
+    
+    // Try each selector
+    primarySelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(item => {
+        if (item.offsetParent !== null && !cards.includes(item)) {
+          // Additional validation: check if it looks like a restaurant card
+          const hasRestaurantContent = 
+            item.textContent.length > 10 && 
+            (item.querySelector('[aria-label*="star"]') || 
+             item.querySelector('.F7nice') ||
+             item.querySelector('h2') || 
+             item.querySelector('h3') ||
+             item.querySelector('.dbXre') ||
+             item.querySelector('.qBF1Pd'));
+          
+          if (hasRestaurantContent) {
+            cards.push(item);
+          }
+        }
+      });
     });
     
-    // Also look for grid items
-    const gridItems = document.querySelectorAll('.NReXi, .TTcmUC, .a68cld');
-    gridItems.forEach(item => {
-      if (item.offsetParent !== null && !cards.includes(item)) {
-        cards.push(item);
-      }
-    });
+    // Fallback: Look for any div with rating info that might be a restaurant
+    if (cards.length === 0) {
+      const potentialCards = document.querySelectorAll('div[role="article"], div[jsname], .x3QjPb');
+      potentialCards.forEach(item => {
+        if (item.offsetParent !== null && 
+            !cards.includes(item) &&
+            item.querySelector('[aria-label*="star"]')) {
+          cards.push(item);
+        }
+      });
+    }
+    
+    // Debug logging
+    if (cards.length > 0) {
+      console.log(`[Scraper] Found ${cards.length} restaurant cards`);
+    }
     
     return cards;
   }

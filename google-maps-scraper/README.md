@@ -15,6 +15,7 @@ A Chrome extension that scrapes restaurant data from Google Maps and extracts co
   - Session duration limits (15 minutes max)
   - Automatic rate limit detection and exponential backoff
   - Consecutive failure tracking
+- **Enhanced restaurant card detection** with multiple selectors and validation
 - **Extract comprehensive data** including:
   - Name
   - Address
@@ -37,6 +38,7 @@ A Chrome extension that scrapes restaurant data from Google Maps and extracts co
 - **Progress indicator** showing scraping status
 - **Duplicate detection** to avoid saving the same restaurant twice
 - **Persistent settings** - Your field selections are saved between sessions
+- **Console logging** for debugging and monitoring progress
 
 ## Installation
 
@@ -50,14 +52,69 @@ A Chrome extension that scrapes restaurant data from Google Maps and extracts co
 
 1. Navigate to [Google Maps](https://www.google.com/maps)
 2. Search for restaurants (e.g., "restaurants near me" or "Italian restaurants in New York")
-3. Click the extension icon to open the popup
-4. **Select the data fields you want to extract** using the checklist:
+3. **Wait for search results to load** - You should see restaurant cards in the left panel
+4. Click the extension icon to open the popup
+5. **Select the data fields you want to extract** using the checklist:
    - Click individual checkboxes to select/deselect specific fields
    - Use "Select All / Deselect All" to toggle all fields at once
-5. Click "Start Scraping" to begin extraction
-6. The scraper will automatically scroll through results with human-like behavior
-7. Once complete, click "JSON" or "CSV" to download your data (only selected fields will be included)
-8. Use "Clear" to reset the scraped data
+6. Click "Start Scraping" to begin extraction
+7. The scraper will automatically scroll through results with human-like behavior
+8. **Watch the browser console** (F12 → Console tab) for detailed progress logs:
+   - `[Scraper] Found scroll container: ...` - Confirms scrollable area detected
+   - `[Scraper] Initial extraction found X restaurants` - Shows initial batch
+   - `[Scraper] Processing X restaurant cards` - Cards being analyzed
+   - `[Scraper] Found: Restaurant Name` - Each restaurant discovered
+   - `[Scraper] Batch extraction found X new restaurants` - Progress updates
+9. Once complete, click "JSON" or "CSV" to download your data (only selected fields will be included)
+10. Use "Clear" to reset the scraped data
+
+## Troubleshooting
+
+### No Restaurants Detected
+
+If the scraper keeps scrolling but doesn't detect any restaurants:
+
+1. **Make sure search results are loaded** - Wait for Google Maps to fully load restaurant cards in the left panel
+2. **Check the console** - Press F12 and go to the Console tab to see debug messages
+3. **Verify you're on a search results page** - The scraper works on pages with restaurant lists, not single restaurant pages
+4. **Try a different search** - Some searches may have different layouts
+
+### Popup Display Issues
+
+If the popup appears as a thin line:
+- Reload the extension in `chrome://extensions/`
+- Clear browser cache
+- The popup is sized at 450px width × 550-650px height
+
+### Rate Limiting
+
+If you see "Rate limit detected" messages:
+- The extension will automatically pause (starts at 60 seconds, up to 5 minutes)
+- Consider reducing scraping speed or taking a break
+- Respect Google Maps' Terms of Service
+
+## Data Fields Reference
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| name | Restaurant name | "Angara Kabab & Karahi" |
+| address | Full street address | "123 Main St, Houston, TX" |
+| phone | Phone number | "+1 713-555-1234" |
+| website | Website URL | "https://example.com" |
+| rating | Star rating (0-5) | 4.5 |
+| reviews | Number of reviews | 1250 |
+| cuisine | Cuisine type | "Indian, Pakistani" |
+| hours | Operating hours | "Open ⋅ Closes 10PM" |
+| priceRange | Price indicator | "$$" |
+| menuItems | Popular dishes | ["Biryani", "Karahi"] |
+| coordinates | Lat/Lng | {"lat": "29.71", "lng": "-95.50"} |
+| placeId | Google Place ID | "ChIJ..." |
+| category | Business category | "Indian restaurant" |
+| popularTimes | Busy times | "Usually busy at 7PM" |
+| reservations | Accepts reservations | true/false |
+| accessibility | Accessibility info | "Wheelchair accessible" |
+| amenities | Features | ["Dine-in", "Takeout", "Delivery"] |
+| photos | Photo count | 150 |
 
 ## Anti-Detection Features
 
