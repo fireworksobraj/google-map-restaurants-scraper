@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Restaurant Scraper</title>
+  <title>Deep Restaurant Scraper</title>
   <link rel="stylesheet" href="styles/popup.css">
 </head>
 <body>
   <div class="popup-container">
     <header class="header">
-      <h1>🍽️ Restaurant Scraper</h1>
-      <p class="subtitle">Extract data from Google Maps</p>
+      <h1>🍽️ Deep Restaurant Scraper</h1>
+      <p class="subtitle">Extract ALL data including dishes, reviews & tabs</p>
     </header>
 
     <main class="main-content">
@@ -34,86 +34,161 @@
 
       <!-- Data Fields Selection -->
       <section class="fields-section">
-        <h3>📋 Select Data Fields</h3>
+        <h3>📋 Select Data Fields to Scrape</h3>
         <div class="select-all-row">
           <label class="checkbox-label select-all-label">
             <input type="checkbox" id="select-all-fields" checked>
             <span>Select All / Deselect All</span>
           </label>
         </div>
+        
+        <div class="fields-tabs">
+          <button class="tab-btn active" data-tab="basic">Basic Info</button>
+          <button class="tab-btn" data-tab="menu">Menu & Dishes</button>
+          <button class="tab-btn" data-tab="about">About</button>
+          <button class="tab-btn" data-tab="reviews">Reviews</button>
+        </div>
+        
         <div class="fields-grid" id="fields-grid">
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="name" checked>
-            <span>Name</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="address" checked>
-            <span>Address</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="phone" checked>
-            <span>Phone Number</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="website" checked>
-            <span>Website</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="rating" checked>
-            <span>Rating</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="reviews" checked>
-            <span>Reviews Count</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="cuisine" checked>
-            <span>Cuisine Type</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="hours" checked>
-            <span>Hours of Operation</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="priceRange" checked>
-            <span>Price Range</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="menuItems" checked>
-            <span>Menu Items</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="coordinates" checked>
-            <span>Coordinates</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="placeId" checked>
-            <span>Place ID</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="category" checked>
-            <span>Category</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="popularTimes" checked>
-            <span>Popular Times</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="reservations" checked>
-            <span>Reservation Info</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="accessibility" checked>
-            <span>Accessibility</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="amenities" checked>
-            <span>Amenities</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" name="field" value="photos" checked>
-            <span>Photo Count</span>
-          </label>
+          <!-- Basic Info Tab -->
+          <div class="fields-tab-content active" data-tab="basic">
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="name" checked>
+              <span>🏪 Name</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="address" checked>
+              <span>📍 Address</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="phone" checked>
+              <span>📞 Phone Number</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="website" checked>
+              <span>🌐 Website</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="rating" checked>
+              <span>⭐ Rating</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="reviews" checked>
+              <span>📝 Reviews Count</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="priceRange" checked>
+              <span>💰 Price Range</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="cuisine" checked>
+              <span>🍴 Cuisine Type</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="category" checked>
+              <span>🏷️ Category</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="hours" checked>
+              <span>🕐 Hours of Operation</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="popularTimes" checked>
+              <span>📊 Popular Times</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="coordinates" checked>
+              <span>🗺️ Coordinates</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="placeId" checked>
+              <span>🆔 Place ID</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="photos" checked>
+              <span>📸 Photo Count</span>
+            </label>
+          </div>
+          
+          <!-- Menu & Dishes Tab -->
+          <div class="fields-tab-content" data-tab="menu">
+            <label class="checkbox-label highlight-field">
+              <input type="checkbox" name="field" value="dishes" checked>
+              <span>🍜 Dishes with Prices (DETAILED)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="menuItems" checked>
+              <span>📋 Menu Items List</span>
+            </label>
+          </div>
+          
+          <!-- About Tab -->
+          <div class="fields-tab-content" data-tab="about">
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="serviceOptions" checked>
+              <span>🚗 Service Options (Delivery, Takeout...)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="highlights" checked>
+              <span>✨ Highlights</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="offerings" checked>
+              <span>🎁 Offerings</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="diningOptions" checked>
+              <span>🍽️ Dining Options</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="atmosphere" checked>
+              <span>🎨 Atmosphere</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="crowd" checked>
+              <span>👥 Crowd Info</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="planning" checked>
+              <span>📅 Planning</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="payments" checked>
+              <span>💳 Payment Methods</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="parking" checked>
+              <span>🅿️ Parking Options</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="accessibility" checked>
+              <span>♿ Accessibility Features</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="amenities" checked>
+              <span>🛎️ Amenities</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="reservations" checked>
+              <span>📞 Reservation Info</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="ownerDescription" checked>
+              <span>📝 Owner Description</span>
+            </label>
+          </div>
+          
+          <!-- Reviews Tab -->
+          <div class="fields-tab-content" data-tab="reviews">
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="reviewSummary" checked>
+              <span>📊 Review Summary</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="field" value="userReviews" checked>
+              <span>💬 User Reviews (Sample)</span>
+            </label>
+          </div>
         </div>
       </section>
 
@@ -123,7 +198,7 @@
           <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          Start Scraping
+          Start Deep Scraping
         </button>
         
         <button id="btn-stop" class="btn btn-danger btn-full" disabled>
@@ -136,7 +211,7 @@
 
       <!-- Data Actions -->
       <section class="data-section">
-        <h3>Export Data</h3>
+        <h3>💾 Export Data</h3>
         <div class="export-buttons">
           <button id="btn-download-json" class="btn btn-secondary">
             <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -144,7 +219,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            JSON
+            Download JSON
           </button>
           <button id="btn-download-csv" class="btn btn-secondary">
             <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -152,14 +227,14 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            CSV
+            Download CSV
           </button>
           <button id="btn-clear" class="btn btn-outline">
             <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
-            Clear
+            Clear Data
           </button>
         </div>
       </section>
@@ -167,15 +242,18 @@
       <!-- Info Section -->
       <section class="info-section">
         <details>
-          <summary>ℹ️ How to use</summary>
+          <summary>ℹ️ How to Use Deep Scraping</summary>
           <ol>
-            <li>Navigate to Google Maps and search for restaurants</li>
-            <li>Click "Start Scraping" to begin extraction</li>
-            <li>The scraper will auto-scroll through results</li>
-            <li>Download your data as JSON or CSV when done</li>
+            <li>Navigate to Google Maps and search for restaurants (e.g., "Indian restaurants in Houston")</li>
+            <li>Select which data fields you want to extract using the tabs above</li>
+            <li>Click "Start Deep Scraping" - the extension will click each restaurant</li>
+            <li>It extracts ALL details: dishes with prices, reviews, about info, etc.</li>
+            <li>Download your comprehensive data as JSON or CSV when done</li>
           </ol>
           <p class="warning">
-            ⚠️ Please respect Google Maps' Terms of Service. Use responsibly and consider rate limits.
+            ⚠️ <strong>Important:</strong> Deep scraping clicks each restaurant individually. This is slower but extracts maximum data.<br><br>
+            🙏 Please respect Google Maps' Terms of Service. Use responsibly with reasonable limits.<br><br>
+            ⏱️ Session limit: 100 restaurants per session to avoid detection. Restart for more.
           </p>
         </details>
       </section>
@@ -187,7 +265,7 @@
     </main>
 
     <footer class="footer">
-      <small>Google Maps Restaurant Scraper v1.0.0</small>
+      <small>Deep Restaurant Scraper v3.0.0 | Manifest V3</small>
     </footer>
   </div>
 

@@ -1,4 +1,4 @@
-// Background service worker for Google Maps Restaurant Scraper
+// Background service worker for Google Maps Deep Restaurant Scraper
 // Handles communication between popup and content script, manages data storage
 
 // Initialize storage when extension loads
@@ -8,7 +8,7 @@ chrome.runtime.onInstalled.addListener(() => {
     scrapingStatus: 'idle',
     scrapeProgress: { current: 0, total: 0 },
     lastScrapeTime: null,
-    selectedFields: ['name', 'address', 'phone', 'website', 'rating', 'reviews', 'cuisine', 'hours', 'priceRange', 'menuItems', 'coordinates', 'placeId', 'category', 'popularTimes', 'reservations', 'accessibility', 'amenities', 'photos']
+    selectedFields: ['name', 'address', 'phone', 'website', 'rating', 'reviews', 'cuisine', 'hours', 'priceRange', 'menuItems', 'dishes', 'coordinates', 'placeId', 'category', 'popularTimes', 'reservations', 'accessibility', 'amenities', 'photos', 'about', 'serviceOptions', 'highlights', 'offerings', 'diningOptions', 'atmosphere', 'crowd', 'planning', 'payments', 'parking', 'reviewSummary', 'ownerDescription', 'userReviews']
   });
 });
 
@@ -34,6 +34,11 @@ async function handleMessage(message, sender, sendResponse) {
       case 'GET_STATUS':
         const status = await getStatus();
         sendResponse({ success: true, ...status });
+        break;
+
+      case 'SAVE_RESTAURANT':
+        await saveRestaurant(message.data);
+        sendResponse({ success: true });
         break;
 
       case 'SAVE_RESTAURANTS':
@@ -103,6 +108,34 @@ async function getStatus() {
   return result;
 }
 
+async function saveRestaurant(restaurant) {
+  const existing = await getRestaurants();
+  
+  // Check for duplicates by name and address
+  const isDuplicate = existing.some(
+    r => r.name === restaurant.name && r.address === restaurant.address
+  );
+  
+  if (!isDuplicate && restaurant.name) {
+    existing.push(restaurant);
+    
+    await chrome.storage.local.set({
+      scrapedRestaurants: existing,
+      lastScrapeTime: new Date().toISOString()
+    });
+    
+    // Update progress
+    await chrome.storage.local.set({
+      scrapeProgress: {
+        current: existing.length,
+        total: existing.length
+      }
+    });
+    
+    console.log(`[Background] Saved restaurant: ${restaurant.name}`);
+  }
+}
+
 async function saveRestaurants(restaurants) {
   const existing = await getRestaurants();
   const newRestaurants = [...existing];
@@ -112,7 +145,7 @@ async function saveRestaurants(restaurants) {
     const isDuplicate = newRestaurants.some(
       r => r.name === restaurant.name && r.address === restaurant.address
     );
-    if (!isDuplicate) {
+    if (!isDuplicate && restaurant.name) {
       newRestaurants.push(restaurant);
     }
   }
@@ -123,11 +156,10 @@ async function saveRestaurants(restaurants) {
   });
   
   // Update progress
-  const progress = await chrome.storage.local.get(['scrapeProgress']);
   await chrome.storage.local.set({
     scrapeProgress: {
       current: newRestaurants.length,
-      total: Math.max(progress.scrapeProgress?.total || 0, newRestaurants.length)
+      total: Math.max(newRestaurants.length, 0)
     }
   });
 }
@@ -152,7 +184,7 @@ async function downloadData(format = 'json') {
   const selectedFields = result.selectedFields || [];
   
   if (restaurants.length === 0) {
-    throw new Error('No data to download');
+    throw new Error('No data to download. Scrape some restaurants first.');
   }
   
   let content, mimeType, extension;
@@ -204,19 +236,33 @@ function convertToCSV(restaurants, selectedFields) {
     phone: 'Phone',
     website: 'Website',
     rating: 'Rating',
-    reviews: 'Reviews',
+    reviews: 'Reviews Count',
     cuisine: 'Cuisine Type',
     hours: 'Hours',
     priceRange: 'Price Range',
     menuItems: 'Menu Items',
+    dishes: 'Dishes (with prices)',
     coordinates: 'Coordinates',
     placeId: 'Place ID',
     category: 'Category',
     popularTimes: 'Popular Times',
-    reservations: 'Reservations',
-    accessibility: 'Accessibility',
+    reservations: 'Reservations Available',
+    accessibility: 'Accessibility Features',
     amenities: 'Amenities',
-    photos: 'Photos'
+    photos: 'Photo Count',
+    about: 'About Section',
+    serviceOptions: 'Service Options',
+    highlights: 'Highlights',
+    offerings: 'Offerings',
+    diningOptions: 'Dining Options',
+    atmosphere: 'Atmosphere',
+    crowd: 'Crowd Info',
+    planning: 'Planning Info',
+    payments: 'Payment Methods',
+    parking: 'Parking Options',
+    reviewSummary: 'Review Summary',
+    ownerDescription: 'Owner Description',
+    userReviews: 'User Reviews'
   };
   
   // Build headers from selected fields
@@ -227,12 +273,27 @@ function convertToCSV(restaurants, selectedFields) {
       let value = r[field];
       
       // Handle special cases
-      if (field === 'menuItems' && Array.isArray(value)) {
+      if (field === 'dishes' && Array.isArray(value)) {
+        // Format dishes as "name ($price)" pairs
+        value = value.map(d => {
+          let dishStr = d.name || '';
+          if (d.price) dishStr += ` (${d.price})`;
+          if (d.description) dishStr += ` - ${d.description}`;
+          return dishStr;
+        }).join(' | ');
+      } else if (field === 'menuItems' && Array.isArray(value)) {
         value = value.join('; ');
       } else if (field === 'coordinates' && value) {
         value = `${value.lat},${value.lng}`;
-      } else if (field === 'hours' && typeof value === 'object') {
+      } else if (field === 'hours' && typeof value === 'object' && !Array.isArray(value)) {
         value = Object.entries(value).map(([day, hours]) => `${day}: ${hours}`).join(' | ');
+      } else if (field === 'userReviews' && Array.isArray(value)) {
+        value = value.map(review => {
+          let reviewStr = review.text || '';
+          if (review.rating) reviewStr = `[${review.rating}] ${reviewStr}`;
+          if (review.date) reviewStr += ` (${review.date})`;
+          return reviewStr;
+        }).join(' ||| ');
       } else if (Array.isArray(value)) {
         value = value.join('; ');
       }

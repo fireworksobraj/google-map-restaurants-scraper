@@ -2,39 +2,29 @@
 # Dependencies
 node_modules/
 
-# Editor/IDE files
-.vscode/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
+# Build artifacts
+dist/
+build/
+*.js.map
 
 # Environment
 .env
 .env.local
 *.env.*
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
 *.log
+
+# Temp files
+*.tmp
+
+# OS specific
 .DS_Store
 Thumbs.db
 ```
