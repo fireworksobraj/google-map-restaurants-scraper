@@ -61,6 +61,18 @@ async function handleMessage(message, sender, sendResponse) {
         sendResponse({ success: true });
         break;
 
+      case 'SCRAPING_COMPLETE':
+        // Update status to complete when scraping finishes
+        await chrome.storage.local.set({ 
+          scrapingStatus: 'complete',
+          scrapeProgress: { 
+            current: message.count || 0, 
+            total: message.count || 0 
+          }
+        });
+        sendResponse({ success: true });
+        break;
+
       default:
         sendResponse({ success: false, error: 'Unknown message type' });
     }
@@ -178,53 +190,97 @@ async function clearData() {
   });
 }
 
-async function downloadData(format = 'json') {
-  const restaurants = await getRestaurants();
-  const result = await chrome.storage.local.get('selectedFields');
-  const selectedFields = result.selectedFields || [];
-  
-  if (restaurants.length === 0) {
-    throw new Error('No data to download. Scrape some restaurants first.');
-  }
-  
-  let content, mimeType, extension;
-  
-  if (format === 'csv') {
-    content = convertToCSV(restaurants, selectedFields);
-    mimeType = 'text/csv';
-    extension = 'csv';
-  } else {
-    // Filter restaurant data to only include selected fields
-    const filteredRestaurants = restaurants.map(r => {
-      const filtered = {};
-      selectedFields.forEach(field => {
-        if (r[field] !== undefined) {
-          filtered[field] = r[field];
+  async function downloadData(format = 'json') {
+    const restaurants = await getRestaurants();
+    const result = await chrome.storage.local.get('selectedFields');
+    const selectedFields = result.selectedFields || [];
+    
+    console.log(`[Background] Downloading ${restaurants.length} restaurants as ${format.toUpperCase()}`);
+    
+    if (restaurants.length === 0) {
+      const errorMsg = 'No data to download. Scrape some restaurants first.';
+      console.error('[Background]', errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    let content, mimeType, extension;
+    
+    if (format === 'csv') {
+      content = convertToCSV(restaurants, selectedFields);
+      mimeType = 'text/csv';
+      extension = 'csv';
+    } else {
+      // Filter restaurant data to only include selected fields
+      const filteredRestaurants = restaurants.map(r => {
+        const filtered = {};
+        selectedFields.forEach(field => {
+          if (r[field] !== undefined) {
+            filtered[field] = r[field];
+          }
+        });
+        return filtered;
+      });
+      content = JSON.stringify(filteredRestaurants, null, 2);
+      mimeType = 'application/json';
+      extension = 'json';
+    }
+    
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `google-maps-restaurants-${timestamp}.${extension}`;
+    
+    console.log(`[Background] Downloading file: ${filename} (${Math.round(content.length / 1024)} KB)`);
+    
+    // Use downloads API to save the file with proper configuration
+    try {
+      const downloadId = await chrome.downloads.download({
+        url: url,
+        filename: filename,
+        saveAs: false,  // Automatic download
+        conflictAction: 'uniquify'  // Handle duplicate filenames
+      });
+      
+      console.log('[Background] Download started with ID:', downloadId);
+      
+      // Monitor download status
+      chrome.downloads.search({ id: downloadId }, function(items) {
+        if (items.length > 0) {
+          console.log('[Background] Download state:', items[0].state);
         }
       });
-      return filtered;
-    });
-    content = JSON.stringify(filteredRestaurants, null, 2);
-    mimeType = 'application/json';
-    extension = 'json';
+      
+      // Clean up the object URL after a delay
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      
+    } catch (error) {
+      console.error('[Background] Download API failed:', error);
+      // Fallback: send message to popup/content to trigger download
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url.includes('google.com/maps')) {
+          // Send data to content script for download
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'DOWNLOAD_FILE',
+            content: content,
+            filename: filename,
+            mimeType: mimeType
+          });
+          console.log('[Background] Fallback download triggered via content script');
+        } else {
+          throw new Error('No valid Google Maps tab found');
+        }
+      } catch (fallbackError) {
+        console.error('[Background] Fallback also failed:', fallbackError);
+        // Last resort: log URL for manual download
+        console.log('[Background] Manual download URL (copy to browser):', url);
+        console.log('[Background] Filename:', filename);
+        alert(`Download failed automatically. File is ready at:\n${url}\n\nRight-click and "Save link as" to download.`);
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }
   }
-  
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const filename = `google-maps-restaurants-${timestamp}.${extension}`;
-  
-  // Use downloads API to save the file
-  chrome.downloads.download({
-    url: url,
-    filename: filename,
-    saveAs: true
-  });
-  
-  // Clean up the object URL after a delay
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 function convertToCSV(restaurants, selectedFields) {
   if (restaurants.length === 0) return '';

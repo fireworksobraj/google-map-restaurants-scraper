@@ -209,19 +209,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnDownloadJson.addEventListener('click', async () => {
     try {
-      await chrome.runtime.sendMessage({ type: 'DOWNLOAD_DATA', format: 'json' });
+      const response = await chrome.runtime.sendMessage({ type: 'DOWNLOAD_DATA', format: 'json' });
+      if (response && response.success) {
+        console.log('JSON download initiated successfully');
+      }
     } catch (error) {
       console.error('Error downloading JSON:', error);
-      alert('No data to download or download failed.');
+      alert(error.message || 'Failed to download JSON. Make sure you have scraped some restaurants first.');
     }
   });
 
   btnDownloadCsv.addEventListener('click', async () => {
     try {
-      await chrome.runtime.sendMessage({ type: 'DOWNLOAD_DATA', format: 'csv' });
+      const response = await chrome.runtime.sendMessage({ type: 'DOWNLOAD_DATA', format: 'csv' });
+      if (response && response.success) {
+        console.log('CSV download initiated successfully');
+      }
     } catch (error) {
       console.error('Error downloading CSV:', error);
-      alert('No data to download or download failed.');
+      alert(error.message || 'Failed to download CSV. Make sure you have scraped some restaurants first.');
     }
   });
 
