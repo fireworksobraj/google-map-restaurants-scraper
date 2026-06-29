@@ -1,0 +1,525 @@
+// Content script for Google Maps Restaurant Scraper
+// Handles DOM interaction, data extraction, and auto-scrolling
+
+(function() {
+  'use strict';
+
+  // State management
+  let isScraping = false;
+  let shouldStop = false;
+  let scrapedRestaurants = new Set();
+  let scrollAttempts = 0;
+  let selectedFields = []; // Fields selected by user
+  const MAX_SCROLL_ATTEMPTS = 50;
+  const SCROLL_DELAY = 1500; // ms between scrolls
+  const BATCH_SIZE = 10; // Process restaurants in batches
+  
+  // All available field names
+  const ALL_FIELDS = [
+    'name', 'address', 'phone', 'website', 'rating', 'reviews', 
+    'cuisine', 'hours', 'priceRange', 'menuItems', 'coordinates', 
+    'placeId', 'category', 'popularTimes', 'reservations', 
+    'accessibility', 'amenities', 'photos'
+  ];
+
+  // Selectors for Google Maps elements (may need updates as Google changes their UI)
+  const SELECTORS = {
+    // Main restaurant list container
+    feedPanel: '[role="feed"]',
+    restaurantList: 'div[role="list"]',
+    restaurantItem: 'div[jsaction]',
+    
+    // Restaurant detail selectors
+    name: 'h1[data-item-id], h2[data-item-id], .DUwDvf.lfPIob',
+    rating: '.F7nice span[aria-hidden]',
+    reviews: '.F7nice span:last-child',
+    priceRange: '.SvDHgb, .YroZCd',
+    cuisineType: '.ll4Gnb, .BkXcjd',
+    
+    // Info section selectors
+    infoSection: '[data-item-id="address"], [data-item-id*="address"], [data-item-id="phone"], [data-item-id*="phone"], [data-item-id="website"], [data-item-id*="website"]',
+    address: '[data-item-id="address"]',
+    phone: '[data-item-id="phone"]',
+    website: '[data-item-id="website"] a',
+    
+    // Hours selector
+    hours: '[data-item-id*="hours"], .H2nSuf',
+    
+    // Menu items
+    menuItems: '.menu-item, .ZQaIge, .ttewwc',
+    
+    // Scrollable container
+    scrollContainer: '.m6QErb.DxyBCb.kA9KIf.dmbRsb',
+    
+    // Pagination/load more button
+    loadMore: '.pGAdea'
+  };
+
+  // Initialize the scraper UI
+  function initScraperUI() {
+    if (document.getElementById('scraper-overlay')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'scraper-overlay';
+    overlay.innerHTML = `
+      <div class="scraper-panel">
+        <div class="scraper-header">
+          <h3>🍽️ Restaurant Scraper</h3>
+          <button id="scraper-close" class="scraper-btn-close">&times;</button>
+        </div>
+        <div class="scraper-content">
+          <div class="scraper-status">
+            <span id="scraper-status-text">Ready to scrape</span>
+          </div>
+          <div class="scraper-progress">
+            <div class="progress-bar">
+              <div id="scraper-progress-fill" class="progress-fill"></div>
+            </div>
+            <span id="scraper-count">0 restaurants</span>
+          </div>
+          <div class="scraper-controls">
+            <button id="scraper-start" class="scraper-btn scraper-btn-primary">Start Scraping</button>
+            <button id="scraper-stop" class="scraper-btn scraper-btn-danger" disabled>Stop</button>
+          </div>
+          <div class="scraper-info">
+            <small>Scrolls through results automatically. Keep this tab active.</small>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+    attachUIListeners();
+  }
+
+  function attachUIListeners() {
+    document.getElementById('scraper-close')?.addEventListener('click', () => {
+      document.getElementById('scraper-overlay')?.remove();
+    });
+
+    document.getElementById('scraper-start')?.addEventListener('click', startScraping);
+    document.getElementById('scraper-stop')?.addEventListener('click', stopScraping);
+
+  // Listen for messages from background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'START_SCRAPING') {
+      // Get selected fields from the message or default to all fields
+      selectedFields = message.selectedFields && message.selectedFields.length > 0 
+        ? message.selectedFields 
+        : ALL_FIELDS;
+      startScraping();
+    } else if (message.type === 'STOP_SCRAPING') {
+      stopScraping();
+    }
+    sendResponse({ received: true });
+  });
+  }
+
+  function updateStatus(text, type = 'info') {
+    const statusEl = document.getElementById('scraper-status-text');
+    if (statusEl) {
+      statusEl.textContent = text;
+      statusEl.className = `status-${type}`;
+    }
+  }
+
+  function updateProgress(current, total) {
+    const fill = document.getElementById('scraper-progress-fill');
+    const count = document.getElementById('scraper-count');
+    
+    if (fill && total > 0) {
+      const percentage = Math.min(100, (current / total) * 100);
+      fill.style.width = `${percentage}%`;
+    }
+    
+    if (count) {
+      count.textContent = `${current} restaurant${current !== 1 ? 's' : ''}`;
+    }
+  }
+
+  function setControls(scraping) {
+    const startBtn = document.getElementById('scraper-start');
+    const stopBtn = document.getElementById('scraper-stop');
+    
+    if (startBtn) startBtn.disabled = scraping;
+    if (stopBtn) stopBtn.disabled = !scraping;
+  }
+
+  async function startScraping() {
+    if (isScraping) return;
+    
+    isScraping = true;
+    shouldStop = false;
+    scrollAttempts = 0;
+    
+    // Initialize UI if not present
+    if (!document.getElementById('scraper-overlay')) {
+      initScraperUI();
+    }
+    
+    setControls(true);
+    updateStatus('Starting scrape...', 'info');
+    
+    try {
+      await scrapeRestaurants();
+    } catch (error) {
+      console.error('Scraping error:', error);
+      updateStatus(`Error: ${error.message}`, 'error');
+    } finally {
+      isScraping = false;
+      setControls(false);
+      
+      if (!shouldStop) {
+        updateStatus('Scraping complete!', 'success');
+      }
+    }
+  }
+
+  function stopScraping() {
+    shouldStop = true;
+    isScraping = false;
+    setControls(false);
+    updateStatus('Stopped by user', 'warning');
+  }
+
+  async function scrapeRestaurants() {
+    const scrollContainer = findScrollContainer();
+    
+    if (!scrollContainer) {
+      updateStatus('No scrollable content found. Try searching for restaurants.', 'warning');
+      return;
+    }
+
+    // First, scroll to load initial content
+    updateStatus('Loading initial results...', 'info');
+    await scrollToBottom(scrollContainer);
+    await delay(1000);
+
+    // Extract restaurants from current view
+    await extractVisibleRestaurants();
+
+    // Continue scrolling and extracting
+    let lastCount = scrapedRestaurants.size;
+    let noProgressCount = 0;
+
+    while (!shouldStop && scrollAttempts < MAX_SCROLL_ATTEMPTS && noProgressCount < 5) {
+      updateStatus(`Scrolling... (${scrapedRestaurants.size} found)`, 'info');
+      
+      const previousHeight = scrollContainer.scrollHeight;
+      await scrollToBottom(scrollContainer);
+      
+      // Wait for content to load
+      await delay(SCROLL_DELAY);
+      
+      // Check if we've reached the bottom
+      const newHeight = scrollContainer.scrollHeight;
+      if (newHeight === previousHeight) {
+        noProgressCount++;
+      } else {
+        noProgressCount = 0;
+        // Extract newly visible restaurants
+        await extractVisibleRestaurants();
+        
+        if (scrapedRestaurants.size > lastCount) {
+          lastCount = scrapedRestaurants.size;
+          updateProgress(scrapedRestaurants.size, scrapedRestaurants.size + 20); // Estimate
+        }
+      }
+      
+      scrollAttempts++;
+    }
+
+    // Final extraction pass
+    await extractVisibleRestaurants();
+
+    // Save results
+    await saveResults();
+    
+    updateStatus(`Complete! Found ${scrapedRestaurants.size} restaurants`, 'success');
+    updateProgress(scrapedRestaurants.size, scrapedRestaurants.size);
+  }
+
+  function findScrollContainer() {
+    // Try multiple possible selectors
+    const selectors = [
+      '.m6QErb.DxyBCb.kA9KIf.dmbRsb',
+      '[role="feed"]',
+      '.HoXNyd',
+      '.e3Wluc',
+      '#pane-side',
+      '.section-layout'
+    ];
+    
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+    }
+    
+    // Fallback: find element with overflow
+    const overflowElements = document.querySelectorAll('[style*="overflow"]');
+    for (const el of overflowElements) {
+      if (el.scrollHeight > el.clientHeight) {
+        return el;
+      }
+    }
+    
+    return document.documentElement;
+  }
+
+  async function scrollToBottom(container) {
+    return new Promise(resolve => {
+      container.scrollTop = container.scrollHeight;
+      setTimeout(resolve, 500);
+    });
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function extractVisibleRestaurants() {
+    const restaurantCards = findAllRestaurantCards();
+    
+    for (const card of restaurantCards) {
+      if (shouldStop) break;
+      
+      const restaurant = extractRestaurantData(card);
+      if (restaurant && restaurant.name) {
+        const key = `${restaurant.name}|${restaurant.address || ''}`;
+        if (!scrapedRestaurants.has(key)) {
+          scrapedRestaurants.add(key);
+          restaurant.scrapedAt = new Date().toISOString();
+          
+          // Send to background for storage
+          chrome.runtime.sendMessage({
+            type: 'SAVE_RESTAURANTS',
+            data: [restaurant]
+          });
+        }
+      }
+    }
+  }
+
+  function findAllRestaurantCards() {
+    const cards = [];
+    
+    // Look for restaurant list items
+    const listItems = document.querySelectorAll('[role="listitem"], .rsselect, .hfpxzc, .VkpGBc');
+    listItems.forEach(item => {
+      if (item.offsetParent !== null) { // Visible element
+        cards.push(item);
+      }
+    });
+    
+    // Also look for grid items
+    const gridItems = document.querySelectorAll('.NReXi, .TTcmUC, .a68cld');
+    gridItems.forEach(item => {
+      if (item.offsetParent !== null && !cards.includes(item)) {
+        cards.push(item);
+      }
+    });
+    
+    return cards;
+  }
+
+  function extractRestaurantData(card) {
+    // If no specific fields selected, extract all
+    const fields = selectedFields.length > 0 ? selectedFields : ALL_FIELDS;
+    
+    const restaurant = {};
+    
+    // Initialize all possible fields as null
+    ALL_FIELDS.forEach(field => {
+      restaurant[field] = null;
+    });
+
+    // Extract name
+    if (fields.includes('name')) {
+      const nameEl = card.querySelector('h1, h2, h3, .dbXre, .qBF1Pd, .DqgBOc, .csPZze');
+      if (nameEl) {
+        restaurant.name = cleanText(nameEl.textContent);
+      }
+    }
+
+    // Extract rating
+    if (fields.includes('rating')) {
+      const ratingEl = card.querySelector('[aria-label*="star"], .F7nice span:first-child');
+      if (ratingEl) {
+        const ariaLabel = ratingEl.getAttribute('aria-label') || '';
+        const match = ariaLabel.match(/(\d+\.?\d*)/);
+        if (match) {
+          restaurant.rating = parseFloat(match[1]);
+        }
+      }
+    }
+
+    // Extract review count
+    if (fields.includes('reviews')) {
+      const reviewsEl = card.querySelector('.F7nice span:last-child, [aria-label*="review"]');
+      if (reviewsEl) {
+        const text = reviewsEl.textContent;
+        const match = text.match(/([\d,]+(?:\.\d+)?)\s*(?:reviews?|ratings?)/i);
+        if (match) {
+          restaurant.reviews = parseInt(match[1].replace(/,/g, ''), 10);
+        }
+      }
+    }
+
+    // Extract price range
+    if (fields.includes('priceRange')) {
+      const priceEl = card.querySelector('.SvDHgb, .YroZCd, .rPhycb');
+      if (priceEl) {
+        restaurant.priceRange = cleanText(priceEl.textContent);
+      }
+    }
+
+    // Extract cuisine type
+    if (fields.includes('cuisine')) {
+      const cuisineEl = card.querySelector('.ll4Gnb, .BkXcjd, .ZkxTvd');
+      if (cuisineEl) {
+        restaurant.cuisine = cleanText(cuisineEl.textContent);
+      }
+    }
+
+    // Extract address
+    if (fields.includes('address')) {
+      const addressEl = card.querySelector('[data-item-id="address"], .Io9tTe, .d3JGoK');
+      if (addressEl) {
+        restaurant.address = cleanText(addressEl.textContent);
+      }
+    }
+
+    // Extract phone
+    if (fields.includes('phone')) {
+      const phoneEl = card.querySelector('[data-item-id="phone"]');
+      if (phoneEl) {
+        restaurant.phone = cleanText(phoneEl.textContent);
+      }
+    }
+
+    // Extract website
+    if (fields.includes('website')) {
+      const websiteEl = card.querySelector('[data-item-id="website"] a, .LrzXrKD');
+      if (websiteEl) {
+        restaurant.website = websiteEl.href || cleanText(websiteEl.textContent);
+      }
+    }
+
+    // Extract hours
+    if (fields.includes('hours')) {
+      const hoursEl = card.querySelector('[data-item-id*="hours"], .OhjcAd, .AMRle');
+      if (hoursEl) {
+        restaurant.hours = cleanText(hoursEl.textContent);
+      }
+    }
+
+    // Extract category
+    if (fields.includes('category')) {
+      const categoryEl = card.querySelector('.W4Efsd, .cfq1nc, .zbvRLc');
+      if (categoryEl) {
+        restaurant.category = cleanText(categoryEl.textContent);
+      }
+    }
+
+    // Extract menu items
+    if (fields.includes('menuItems')) {
+      const menuItemsEls = card.querySelectorAll('.menu-item, .ZQaIge, .ttewwc, .niQeJb');
+      if (menuItemsEls.length > 0) {
+        restaurant.menuItems = Array.from(menuItemsEls).map(el => cleanText(el.textContent)).filter(Boolean);
+      }
+    }
+
+    // Extract photo count
+    if (fields.includes('photos')) {
+      const photosEl = card.querySelector('.C5pkye, .MdpTob, [aria-label*="photo"]');
+      if (photosEl) {
+        const match = photosEl.textContent.match(/(\d+)/);
+        if (match) {
+          restaurant.photos = parseInt(match[1], 10);
+        }
+      }
+    }
+
+    // Try to get coordinates from any data attributes
+    if (fields.includes('coordinates')) {
+      const latLonEl = card.querySelector('[data-lat], [data-lng]');
+      if (latLonEl) {
+        restaurant.coordinates = {
+          lat: latLonEl.dataset.lat || null,
+          lng: latLonEl.dataset.lng || null
+        };
+      }
+    }
+
+    // Get place ID if available
+    if (fields.includes('placeId')) {
+      const placeIdEl = card.querySelector('[data-place-id], [data-pid]');
+      if (placeIdEl) {
+        restaurant.placeId = placeIdEl.dataset.placeId || placeIdEl.dataset.pid || null;
+      }
+    }
+
+    // Extract popular times (if visible)
+    if (fields.includes('popularTimes')) {
+      const popularTimesEl = card.querySelector('.HpeNrb, .populartimes-container');
+      if (popularTimesEl) {
+        restaurant.popularTimes = cleanText(popularTimesEl.textContent);
+      }
+    }
+
+    // Extract reservation info
+    if (fields.includes('reservations')) {
+      const reservationEl = card.querySelector('[data-item-id*="reserve"], .reservable-indicator');
+      if (reservationEl) {
+        restaurant.reservations = reservationEl.textContent.includes('Reserve') || 
+                                  reservationEl.textContent.includes('OpenTable');
+      }
+    }
+
+    // Extract accessibility features
+    if (fields.includes('accessibility')) {
+      const accessibilityEl = card.querySelector('[aria-label*="wheelchair"], .accessibility-info');
+      if (accessibilityEl) {
+        restaurant.accessibility = cleanText(accessibilityEl.textContent);
+      }
+    }
+
+    // Extract amenities
+    if (fields.includes('amenities')) {
+      const amenitiesEls = card.querySelectorAll('.amp_d, .service-option, .amenity-item');
+      if (amenitiesEls.length > 0) {
+        restaurant.amenities = Array.from(amenitiesEls).map(el => cleanText(el.textContent)).filter(Boolean);
+      }
+    }
+
+    return restaurant;
+  }
+
+  function cleanText(text) {
+    if (!text) return null;
+    return text.trim().replace(/\s+/g, ' ').substring(0, 500);
+  }
+
+  async function saveResults() {
+    // Results are saved incrementally during scraping
+    // This method ensures final state is persisted
+    chrome.runtime.sendMessage({
+      type: 'GET_STATUS'
+    }, response => {
+      console.log('Final status:', response);
+    });
+  }
+
+  // Auto-initialize when page loads
+  function init() {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initScraperUI);
+    } else {
+      initScraperUI();
+    }
+  }
+
+  // Start initialization
+  init();
+})();
