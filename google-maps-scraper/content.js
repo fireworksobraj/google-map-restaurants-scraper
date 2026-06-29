@@ -1,6 +1,6 @@
-// Content script for Google Maps Restaurant Scraper
-// Handles DOM interaction, data extraction, and auto-scrolling
-// Includes advanced anti-detection techniques
+// Content script for Google Maps Deep Restaurant Scraper
+// Handles DOM interaction, data extraction, auto-scrolling, and deep tab exploration
+// Includes advanced anti-detection techniques and comprehensive field extraction
 
 (function() {
   'use strict';
@@ -13,6 +13,7 @@
   let selectedFields = []; // Fields selected by user
   const MAX_SCROLL_ATTEMPTS = 50;
   const BATCH_SIZE = 10; // Process restaurants in batches
+  const MAX_RESTAURANTS_PER_SESSION = 100; // Safety limit for deep scraping
   
   // Anti-detection: Randomized timing configuration
   const TIMING_CONFIG = {
@@ -27,7 +28,11 @@
     rateLimitBackoff: 60000,   // Initial backoff on rate limit (ms)
     maxBackoff: 300000,        // Maximum backoff (5 minutes)
     consecutiveFailThreshold: 3, // Failures before triggering backoff
-    sessionDurationLimit: 900000 // Max session duration (15 minutes)
+    sessionDurationLimit: 900000, // Max session duration (15 minutes)
+    clickDelayMin: 800,        // Delay after clicking restaurant
+    clickDelayMax: 2000,       // Delay after clicking restaurant (max)
+    tabSwitchDelay: 500,       // Delay when switching tabs
+    backDelay: 1000            // Delay when going back to list
   };
   
   // Session tracking for anti-detection
@@ -37,46 +42,92 @@
   let totalRestaurantsFound = 0;
   let lastScrollHeight = 0;
   let scrollPattern = []; // Track scroll pattern for randomness
+  let processedCount = 0;
   
-  // All available field names
+  // All available field names - comprehensive list
   const ALL_FIELDS = [
     'name', 'address', 'phone', 'website', 'rating', 'reviews', 
     'cuisine', 'hours', 'priceRange', 'menuItems', 'coordinates', 
     'placeId', 'category', 'popularTimes', 'reservations', 
-    'accessibility', 'amenities', 'photos'
+    'accessibility', 'amenities', 'photos', 'dishes', 'about',
+    'serviceOptions', 'highlights', 'offerings', 'diningOptions',
+    'atmosphere', 'crowd', 'planning', 'payments', 'parking',
+    'reviewSummary', 'ownerDescription', 'userReviews'
   ];
 
-  // Selectors for Google Maps elements (may need updates as Google changes their UI)
+  // Selectors for Google Maps elements (comprehensive for all tabs)
   const SELECTORS = {
     // Main restaurant list container
     feedPanel: '[role="feed"]',
     restaurantList: 'div[role="list"]',
     restaurantItem: 'div[jsaction]',
     
-    // Restaurant detail selectors
-    name: 'h1[data-item-id], h2[data-item-id], .DUwDvf.lfPIob',
-    rating: '.F7nice span[aria-hidden]',
-    reviews: '.F7nice span:last-child',
-    priceRange: '.SvDHgb, .YroZCd',
-    cuisineType: '.ll4Gnb, .BkXcjd',
+    // Restaurant detail selectors (side panel)
+    name: 'h1[data-item-id], h2[data-item-id], .DUwDvf.lfPIob, h1.fontTitleLarge',
+    rating: '.F7nice span[aria-hidden], .TNqAu span[aria-label*="star"]',
+    reviews: '.F7nice span:last-child, .TNqAu',
+    priceRange: '.SvDHgb, .YroZCd, .rPhycb',
+    cuisineType: '.ll4Gnb, .BkXcjd, .ZkxTvd',
     
     // Info section selectors
     infoSection: '[data-item-id="address"], [data-item-id*="address"], [data-item-id="phone"], [data-item-id*="phone"], [data-item-id="website"], [data-item-id*="website"]',
     address: '[data-item-id="address"]',
     phone: '[data-item-id="phone"]',
-    website: '[data-item-id="website"] a',
+    website: '[data-item-id="website"] a, .LrzXrKD',
     
     // Hours selector
-    hours: '[data-item-id*="hours"], .H2nSuf',
+    hours: '[data-item-id*="hours"], .H2nSuf, .OhjcAd',
     
-    // Menu items
-    menuItems: '.menu-item, .ZQaIge, .ttewwc',
+    // Menu items and dishes
+    menuItems: '.menu-item, .ZQaIge, .ttewwc, .niQeJb',
+    dishName: '.item-name, .menuItem-name, .text-body-large',
+    dishPrice: '.item-price, .menuItem-price, .text-body-medium',
+    dishDescription: '.item-description, .menuItem-description',
+    
+    // Tabs navigation
+    tabs: 'nav[role="navigation"] ul, .tab-list, .pKUxbc',
+    tabButton: 'button[role="tab"], .tab-button, .pKUxbc button',
+    activeTab: 'button[aria-selected="true"], [role="tab"][aria-selected="true"]',
+    
+    // About section
+    aboutSection: '[data-item-id="about"], .section-about',
+    serviceOptions: '[data-item-id*="service-option"], .service-option',
+    highlights: '[data-item-id*="highlight"], .highlight-item',
+    offerings: '[data-item-id*="offering"], .offering-item',
+    diningOptions: '[data-item-id*="dining-option"], .dining-option',
+    atmosphere: '[data-item-id*="atmosphere"], .atmosphere-item',
+    crowd: '[data-item-id*="crowd"], .crowd-item',
+    planning: '[data-item-id*="planning"], .planning-item',
+    payments: '[data-item-id*="payment"], .payment-option',
+    accessibility: '[data-item-id*="accessibility"], .accessibility-option',
+    amenities: '[data-item-id*="amenity"], .amenity-item',
+    parking: '[data-item-id*="parking"], .parking-option',
+    
+    // Reviews section
+    reviewSection: '[role="feed"]',
+    reviewCard: '.gws-localreviews__general-reviews-block .d4r55, .review-card',
+    reviewText: '.review-text, .MyEned',
+    reviewRating: '[aria-label*="star"]',
+    reviewDate: '.review-date, .deikDb',
+    
+    // Photos section
+    photoSection: '.photo-section, [data-item-id*="photo"]',
+    photoCount: '.C5pkye, .MdpTob, [aria-label*="photo"]',
     
     // Scrollable container
-    scrollContainer: '.m6QErb.DxyBCb.kA9KIf.dmbRsb',
+    scrollContainer: '.m6QErb.DxyBCb.kA9KIf.dmbRsb, .HoXNyd, #pane-side',
     
     // Pagination/load more button
-    loadMore: '.pGAdea'
+    loadMore: '.pGAdea',
+    
+    // Back button to return to list
+    backButton: '.RSjbb, button[aria-label*="Back"]',
+    
+    // Owner description
+    ownerDescription: '.owner-description, .from-owner',
+    
+    // Popular times
+    popularTimes: '.HpeNrb, .populartimes-container, .busy-options'
   };
 
   // Initialize the scraper UI

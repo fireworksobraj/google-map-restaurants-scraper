@@ -1,4 +1,4 @@
-// Popup script for Google Maps Restaurant Scraper
+// Popup script for Google Maps Deep Restaurant Scraper
 // Handles UI interactions and communication with background script
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -20,6 +20,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Field selection elements
   const selectAllFields = document.getElementById('select-all-fields');
   const fieldCheckboxes = document.querySelectorAll('input[name="field"]');
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.fields-tab-content');
+
+  // Tab switching functionality
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tabId = btn.dataset.tab;
+      
+      // Update button states
+      tabButtons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      // Update content visibility
+      tabContents.forEach(content => {
+        content.classList.remove('active');
+        if (content.dataset.tab === tabId) {
+          content.classList.add('active');
+        }
+      });
+    });
+  });
 
   // Save selected fields to storage
   async function saveSelectedFields() {
@@ -84,6 +105,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         fieldCheckboxes.forEach(cb => {
           cb.disabled = isScraping;
         });
+        tabButtons.forEach(btn => {
+          btn.disabled = isScraping;
+        });
         
         // Show last scrape time if available
         if (response.lastScrapeTime) {
@@ -101,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateStatusIndicator(status) {
     switch (status) {
       case 'scraping':
-        statusText.textContent = 'Scraping in progress...';
+        statusText.textContent = 'Deep scraping in progress...';
         statusDot.className = 'status-dot scraping';
         break;
       case 'stopped':
@@ -126,7 +150,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       progressFill.style.width = `${percent}%`;
       progressPercent.textContent = `${percent}%`;
     } else if (current > 0) {
-      // If we have items but no total, show a minimum percentage
       progressFill.style.width = '10%';
       progressPercent.textContent = 'In progress...';
     } else {
