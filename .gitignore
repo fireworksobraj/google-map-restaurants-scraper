@@ -1,49 +1,10 @@
-# Examples 1:
-# Project with only source/config files
-*.py
-*.js
-*.java
-*.go
-*.cpp
-*.h
-*.md
-*.txt
-*.json
-*.yml
-*.yaml
-*.toml
-*.cfg
-*.ini
-
-# Example 2 (Project with artifacts):
-# Compiled and build artifacts
-*.pyc
-*.class
-*.o
-*.exe
-*.dll
-*.so
-*.a
-*.obj
-*.out
-dist/
-build/
-target/
-
+```
 # Dependencies
 node_modules/
-venv/
-.venv/
-__pycache__/
-.mypy_cache/
-.pytest_cache/
-.gradle/
 
 # Logs and temp files
 *.log
 *.tmp
-*.swp
-*.swo
 
 # Environment
 .env
@@ -54,16 +15,35 @@ __pycache__/
 .vscode/
 .idea/
 
-# System
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+.env
+
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+*.bundle.js
+
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Coverage
+# Testing
+.coverage
 coverage/
 htmlcov/
-.coverage
+.pytest_cache/
+.mypy_cache/
 
-# Compressed files
+# Compression
 *.zip
 *.gz
 *.tar
@@ -86,3 +66,4 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
+```

@@ -492,6 +492,7 @@
           await enhancedUserInteraction(card);
         }
         
+        // Extract basic data first
         const restaurant = extractRestaurantData(card);
         if (restaurant && restaurant.name) {
           const key = `${restaurant.name}|${restaurant.address || ''}`;
@@ -502,6 +503,13 @@
             restaurant.scrapedAt = new Date().toISOString();
             
             console.log(`[Scraper] Found: ${restaurant.name}`);
+            
+            // Deep scrape if enabled - click into restaurant for detailed data
+            if (ENABLE_DEEP_SCRAPING) {
+              updateStatus(`Scraping details: ${restaurant.name}`, 'info');
+              const detailedData = await scrapeRestaurantDetails(card, restaurant);
+              Object.assign(restaurant, detailedData);
+            }
             
             // Store the full restaurant object in the Map for later export
             window.scrapedRestaurantMap.set(key, restaurant);
@@ -824,6 +832,327 @@
     }
 
     return restaurant;
+  }
+
+  // Deep scrape: Click into restaurant and extract detailed information
+  async function scrapeRestaurantDetails(card, basicData) {
+    const detailedData = {};
+    
+    try {
+      // Store original scroll position
+      const scrollContainer = findScrollContainer();
+      const originalScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+      
+      // Scroll card into view
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await randomDelay(TIMING_CONFIG.clickDelayMin, TIMING_CONFIG.clickDelayMax);
+      
+      // Click on the card to open details
+      card.click();
+      await randomDelay(TIMING_CONFIG.pageLoadWait, TIMING_CONFIG.pageLoadWait + 1000);
+      
+      // Wait for detail panel to load
+      await randomDelay(1500, 2500);
+      
+      // Check if we're in the detail view (side panel or full page)
+      const detailPanel = document.querySelector('[role="dialog"]') || 
+                          document.querySelector('.m6QErb.DxyBCb.kA9KIf.dmbRsb') ||
+                          document.body;
+      
+      // Extract additional fields from detail view
+      
+      // Address
+      if (!basicData.address) {
+        const addressEl = detailPanel.querySelector('[data-item-id="address"]');
+        if (addressEl) {
+          detailedData.address = cleanText(addressEl.textContent);
+        }
+      }
+      
+      // Phone
+      if (!basicData.phone) {
+        const phoneEl = detailPanel.querySelector('[data-item-id="phone"]');
+        if (phoneEl) {
+          detailedData.phone = cleanText(phoneEl.textContent);
+        }
+      }
+      
+      // Website
+      if (!basicData.website) {
+        const websiteEl = detailPanel.querySelector('[data-item-id="website"] a');
+        if (websiteEl) {
+          detailedData.website = websiteEl.href || cleanText(websiteEl.textContent);
+        }
+      }
+      
+      // Hours (detailed)
+      if (!basicData.hours) {
+        const hoursEl = detailPanel.querySelector('[data-item-id*="hours"]');
+        if (hoursEl) {
+          detailedData.hours = cleanText(hoursEl.textContent);
+        }
+      }
+      
+      // Menu items
+      if (!basicData.menuItems) {
+        const menuItemsEls = detailPanel.querySelectorAll('.menu-item, .ZQaIge, .ttewwc');
+        if (menuItemsEls.length > 0) {
+          detailedData.menuItems = Array.from(menuItemsEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean)
+            .slice(0, MAX_MENU_ITEMS_TO_SCRAPE);
+        }
+      }
+      
+      // Dishes with prices
+      if (!basicData.dishes) {
+        const dishCards = detailPanel.querySelectorAll('.menuItem-container, .menu-item-row');
+        if (dishCards.length > 0) {
+          const dishes = [];
+          dishCards.forEach(dishCard => {
+            const nameEl = dishCard.querySelector('.item-name, .menuItem-name');
+            const priceEl = dishCard.querySelector('.item-price, .menuItem-price');
+            if (nameEl && priceEl) {
+              dishes.push({
+                name: cleanText(nameEl.textContent),
+                price: cleanText(priceEl.textContent)
+              });
+            }
+          });
+          detailedData.dishes = dishes.slice(0, MAX_MENU_ITEMS_TO_SCRAPE);
+        }
+      }
+      
+      // Coordinates
+      if (!basicData.coordinates) {
+        const mapEl = detailPanel.querySelector('[data-lat], [data-lng]');
+        if (mapEl) {
+          detailedData.coordinates = {
+            lat: mapEl.dataset.lat || null,
+            lng: mapEl.dataset.lng || null
+          };
+        }
+      }
+      
+      // Place ID
+      if (!basicData.placeId) {
+        const placeIdEl = detailPanel.querySelector('[data-place-id], [data-pid]');
+        if (placeIdEl) {
+          detailedData.placeId = placeIdEl.dataset.placeId || placeIdEl.dataset.pid || null;
+        }
+      }
+      
+      // About section data
+      if (!basicData.about) {
+        const aboutEl = detailPanel.querySelector('[data-item-id="about"]');
+        if (aboutEl) {
+          detailedData.about = cleanText(aboutEl.textContent);
+        }
+      }
+      
+      // Service options
+      if (!basicData.serviceOptions) {
+        const serviceEls = detailPanel.querySelectorAll('[data-item-id*="service-option"]');
+        if (serviceEls.length > 0) {
+          detailedData.serviceOptions = Array.from(serviceEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Highlights
+      if (!basicData.highlights) {
+        const highlightEls = detailPanel.querySelectorAll('[data-item-id*="highlight"]');
+        if (highlightEls.length > 0) {
+          detailedData.highlights = Array.from(highlightEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Offerings
+      if (!basicData.offerings) {
+        const offeringEls = detailPanel.querySelectorAll('[data-item-id*="offering"]');
+        if (offeringEls.length > 0) {
+          detailedData.offerings = Array.from(offeringEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Dining options
+      if (!basicData.diningOptions) {
+        const diningEls = detailPanel.querySelectorAll('[data-item-id*="dining-option"]');
+        if (diningEls.length > 0) {
+          detailedData.diningOptions = Array.from(diningEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Atmosphere
+      if (!basicData.atmosphere) {
+        const atmosphereEls = detailPanel.querySelectorAll('[data-item-id*="atmosphere"]');
+        if (atmosphereEls.length > 0) {
+          detailedData.atmosphere = Array.from(atmosphereEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Crowd info
+      if (!basicData.crowd) {
+        const crowdEls = detailPanel.querySelectorAll('[data-item-id*="crowd"]');
+        if (crowdEls.length > 0) {
+          detailedData.crowd = Array.from(crowdEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Planning info
+      if (!basicData.planning) {
+        const planningEls = detailPanel.querySelectorAll('[data-item-id*="planning"]');
+        if (planningEls.length > 0) {
+          detailedData.planning = Array.from(planningEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Payment methods
+      if (!basicData.payments) {
+        const paymentEls = detailPanel.querySelectorAll('[data-item-id*="payment"]');
+        if (paymentEls.length > 0) {
+          detailedData.payments = Array.from(paymentEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Parking options
+      if (!basicData.parking) {
+        const parkingEls = detailPanel.querySelectorAll('[data-item-id*="parking"]');
+        if (parkingEls.length > 0) {
+          detailedData.parking = Array.from(parkingEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Accessibility features
+      if (!basicData.accessibility) {
+        const accessEls = detailPanel.querySelectorAll('[data-item-id*="accessibility"]');
+        if (accessEls.length > 0) {
+          detailedData.accessibility = Array.from(accessEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Amenities
+      if (!basicData.amenities) {
+        const amenityEls = detailPanel.querySelectorAll('[data-item-id*="amenity"]');
+        if (amenityEls.length > 0) {
+          detailedData.amenities = Array.from(amenityEls)
+            .map(el => cleanText(el.textContent))
+            .filter(Boolean);
+        }
+      }
+      
+      // Photo count
+      if (!basicData.photos) {
+        const photoEl = detailPanel.querySelector('[aria-label*="photo"]');
+        if (photoEl) {
+          const match = photoEl.textContent.match(/(\d+)/);
+          if (match) {
+            detailedData.photos = parseInt(match[1], 10);
+          }
+        }
+      }
+      
+      // Popular times
+      if (!basicData.popularTimes) {
+        const popularEl = detailPanel.querySelector('.HpeNrb, .populartimes-container');
+        if (popularEl) {
+          detailedData.popularTimes = cleanText(popularEl.textContent);
+        }
+      }
+      
+      // Reservations
+      if (basicData.reservations === null || basicData.reservations === undefined) {
+        const reserveEl = detailPanel.querySelector('[data-item-id*="reserve"], .reservable-indicator');
+        if (reserveEl) {
+          detailedData.reservations = reserveEl.textContent.includes('Reserve') || 
+                                      reserveEl.textContent.includes('OpenTable');
+        }
+      }
+      
+      // Owner description
+      if (!basicData.ownerDescription) {
+        const ownerEl = detailPanel.querySelector('.owner-description, .from-owner');
+        if (ownerEl) {
+          detailedData.ownerDescription = cleanText(ownerEl.textContent);
+        }
+      }
+      
+      // User reviews (sample)
+      if (!basicData.userReviews) {
+        const reviewEls = detailPanel.querySelectorAll('.gws-localreviews__general-reviews-block .d4r55');
+        if (reviewEls.length > 0) {
+          const reviews = [];
+          reviewEls.forEach((reviewEl, index) => {
+            if (index >= MAX_REVIEWS_TO_SCRAPE) return;
+            const textEl = reviewEl.querySelector('.MyEned, .review-text');
+            const ratingEl = reviewEl.querySelector('[aria-label*="star"]');
+            const dateEl = reviewEl.querySelector('.deikDb, .review-date');
+            
+            if (textEl) {
+              reviews.push({
+                text: cleanText(textEl.textContent),
+                rating: ratingEl ? parseFloat(ratingEl.getAttribute('aria-label')) : null,
+                date: dateEl ? cleanText(dateEl.textContent) : null
+              });
+            }
+          });
+          detailedData.userReviews = reviews;
+        }
+      }
+      
+      // Review summary
+      if (!basicData.reviewSummary) {
+        const summaryEl = detailPanel.querySelector('.review-summary, .ZUIwZR');
+        if (summaryEl) {
+          detailedData.reviewSummary = cleanText(summaryEl.textContent);
+        }
+      }
+      
+      // Go back to list view
+      const backButton = detailPanel.querySelector('.RSjbb, button[aria-label*="Back"]');
+      if (backButton) {
+        backButton.click();
+        await randomDelay(TIMING_CONFIG.backDelay, TIMING_CONFIG.backDelay + 500);
+      }
+      
+      // Restore scroll position
+      if (scrollContainer) {
+        scrollContainer.scrollTop = originalScrollTop;
+      }
+      
+      console.log('[Scraper] Deep scrape completed for:', basicData.name);
+      
+    } catch (error) {
+      console.error('[Scraper] Error during deep scrape:', error);
+      // Try to go back if we're stuck in detail view
+      try {
+        const backButton = document.querySelector('.RSjbb, button[aria-label*="Back"]');
+        if (backButton) backButton.click();
+      } catch (e) {
+        // Ignore errors in recovery
+      }
+    }
+    
+    return detailedData;
   }
 
   function cleanText(text) {
