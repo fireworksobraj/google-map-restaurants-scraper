@@ -336,7 +336,7 @@ function convertToCSV(restaurants, selectedFields) {
         value = value.join('; ');
       } else if (field === 'coordinates' && value) {
         value = `${value.lat},${value.lng}`;
-      } else if (field === 'hours' && typeof value === 'object' && !Array.isArray(value)) {
+      } else if (field === 'hours' && value && typeof value === 'object' && !Array.isArray(value)) {
         value = Object.entries(value).map(([day, hours]) => `${day}: ${hours}`).join(' | ');
       } else if (field === 'userReviews' && Array.isArray(value)) {
         value = value.map(review => {
