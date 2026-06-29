@@ -1,30 +1,51 @@
-```
+```gitignore
 # Dependencies
 node_modules/
 
-# Build artifacts
-dist/
-build/
-*.js.map
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Logs
-*.log
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-selfcheck.json
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Temp files
-*.tmp
+# Build directories
+build/
+dist/
+*.egg
+*.egg-info/
+.tox/
+.coverage
 
-# OS specific
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 ```

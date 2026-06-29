@@ -1,6 +1,7 @@
 // Content script for Google Maps Deep Restaurant Scraper
 // Handles DOM interaction, data extraction, auto-scrolling, and deep tab exploration
 // Includes advanced anti-detection techniques and comprehensive field extraction
+// Enhanced v3.1.0: Deep tab exploration, review scraping, Excel export support
 
 (function() {
   'use strict';
@@ -13,26 +14,33 @@
   let selectedFields = []; // Fields selected by user
   const MAX_SCROLL_ATTEMPTS = 50;
   const BATCH_SIZE = 10; // Process restaurants in batches
-  const MAX_RESTAURANTS_PER_SESSION = 100; // Safety limit for deep scraping
+  const MAX_RESTAURANTS_PER_SESSION = 150; // Increased safety limit for deep scraping
+  const ENABLE_DEEP_SCRAPING = true; // Enable clicking into restaurants for detailed data
+  const MAX_REVIEWS_TO_SCRAPE = 10; // Maximum reviews to extract per restaurant
+  const MAX_MENU_ITEMS_TO_SCRAPE = 50; // Maximum menu items to extract
   
-  // Anti-detection: Randomized timing configuration
+  // Anti-detection: Randomized timing configuration - ENHANCED
   const TIMING_CONFIG = {
-    minScrollDelay: 2000,      // Minimum delay between scrolls (ms)
-    maxScrollDelay: 5000,      // Maximum delay between scrolls (ms)
-    minScrollStep: 0.3,        // Minimum scroll percentage per action
-    maxScrollStep: 0.7,        // Maximum scroll percentage per action
-    humanPauseChance: 0.3,     // Chance to add extra "human" pause
-    extraPauseMin: 1000,       // Extra pause minimum (ms)
-    extraPauseMax: 4000,       // Extra pause maximum (ms)
+    minScrollDelay: 2500,      // Minimum delay between scrolls (ms) - increased
+    maxScrollDelay: 6000,      // Maximum delay between scrolls (ms) - increased
+    minScrollStep: 0.2,        // Minimum scroll percentage per action - more gradual
+    maxScrollStep: 0.6,        // Maximum scroll percentage per action
+    humanPauseChance: 0.4,     // Chance to add extra "human" pause - increased
+    extraPauseMin: 1500,       // Extra pause minimum (ms) - increased
+    extraPauseMax: 5000,       // Extra pause maximum (ms) - increased
     requestTimeout: 30000,     // Timeout for requests (ms)
-    rateLimitBackoff: 60000,   // Initial backoff on rate limit (ms)
-    maxBackoff: 300000,        // Maximum backoff (5 minutes)
+    rateLimitBackoff: 90000,   // Initial backoff on rate limit (ms) - increased
+    maxBackoff: 420000,        // Maximum backoff (7 minutes) - increased
     consecutiveFailThreshold: 3, // Failures before triggering backoff
-    sessionDurationLimit: 900000, // Max session duration (15 minutes)
-    clickDelayMin: 800,        // Delay after clicking restaurant
-    clickDelayMax: 2000,       // Delay after clicking restaurant (max)
-    tabSwitchDelay: 500,       // Delay when switching tabs
-    backDelay: 1000            // Delay when going back to list
+    sessionDurationLimit: 1200000, // Max session duration (20 minutes) - increased
+    clickDelayMin: 1200,       // Delay after clicking restaurant - increased
+    clickDelayMax: 3000,       // Delay after clicking restaurant (max) - increased
+    tabSwitchDelay: 800,       // Delay when switching tabs - increased
+    backDelay: 1500,           // Delay when going back to list - increased
+    pageLoadWait: 2000,        // Wait for page load after navigation
+    reviewScrollDelay: 500,    // Delay between review scrolls
+    mouseMoveSteps: 5,         // Steps for smooth mouse movement
+    mouseMoveDelay: 30         // Delay between mouse move steps
   };
   
   // Session tracking for anti-detection
@@ -450,9 +458,17 @@
       for (const card of batch) {
         if (shouldStop) break;
         
-        // Randomly interact with card to simulate user behavior
-        if (Math.random() < 0.1) { // 10% chance to "hover" over card
-          simulateUserInteraction(card);
+        // Check session limit
+        if (totalRestaurantsFound >= MAX_RESTAURANTS_PER_SESSION) {
+          updateStatus('Session limit reached (150 restaurants). Consider restarting.', 'warning');
+          console.log('[Scraper] Session limit reached, stopping extraction');
+          shouldStop = true;
+          break;
+        }
+        
+        // Enhanced: Randomly interact with card to simulate user behavior
+        if (Math.random() < 0.15) { // 15% chance to "hover" over card
+          await enhancedUserInteraction(card);
         }
         
         const restaurant = extractRestaurantData(card);
@@ -467,7 +483,7 @@
             console.log(`[Scraper] Found: ${restaurant.name}`);
             
             // Send to background for storage with slight random delay
-            await delay(50 + Math.random() * 100);
+            await delay(80 + Math.random() * 120);
             try {
               chrome.runtime.sendMessage({
                 type: 'SAVE_RESTAURANTS',
@@ -482,33 +498,76 @@
       
       // Add delay between batches
       if (i + BATCH_SIZE < restaurantCards.length) {
-        await randomDelay(200, 500);
+        await randomDelay(300, 700); // Increased delay
       }
     }
     
     return newFound;
   }
 
-  // Simulate user interaction (hover/focus) to appear more human-like
-  function simulateUserInteraction(element) {
+  // Enhanced user interaction simulation with smooth mouse movement
+  async function enhancedUserInteraction(element) {
     try {
-      // Scroll element into view if needed
+      // Scroll element into view smoothly
       if (element.offsetParent !== null) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await delay(200);
         
-        // Dispatch mouse events to simulate hover
-        const events = ['mouseenter', 'mouseover', 'mousemove', 'focus'];
-        events.forEach(eventType => {
-          const event = new MouseEvent(eventType, {
+        // Get element position
+        const rect = element.getBoundingClientRect();
+        const startX = window.innerWidth / 2;
+        const startY = window.innerHeight / 2;
+        const targetX = rect.left + rect.width / 2;
+        const targetY = rect.top + rect.height / 2;
+        
+        // Simulate smooth mouse movement to element
+        for (let i = 0; i <= TIMING_CONFIG.mouseMoveSteps; i++) {
+          const progress = i / TIMING_CONFIG.mouseMoveSteps;
+          const currentX = startX + (targetX - startX) * progress;
+          const currentY = startY + (targetY - startY) * progress;
+          
+          const mouseEvent = new MouseEvent('mousemove', {
             bubbles: true,
             cancelable: true,
-            view: window
+            view: window,
+            clientX: currentX,
+            clientY: currentY
+          });
+          document.elementFromPoint(currentX, currentY)?.dispatchEvent(mouseEvent);
+          await delay(TIMING_CONFIG.mouseMoveDelay);
+        }
+        
+        // Dispatch comprehensive mouse events
+        const events = [
+          { type: 'mouseenter', bubbles: true },
+          { type: 'mouseover', bubbles: true },
+          { type: 'mousemove', bubbles: true, clientX: targetX, clientY: targetY },
+          { type: 'mousedown', bubbles: true, button: 0 },
+          { type: 'mouseup', bubbles: true, button: 0 },
+          { type: 'click', bubbles: true },
+          { type: 'focus', bubbles: false }
+        ];
+        
+        events.forEach(eventConfig => {
+          const event = new MouseEvent(eventConfig.type, {
+            bubbles: eventConfig.bubbles,
+            cancelable: true,
+            view: window,
+            clientX: eventConfig.clientX || targetX,
+            clientY: eventConfig.clientY || targetY,
+            button: eventConfig.button || 0
           });
           element.dispatchEvent(event);
         });
+        
+        // Add focus event
+        if (typeof element.focus === 'function') {
+          element.focus();
+        }
       }
     } catch (e) {
       // Silently fail - interaction simulation is optional
+      console.log('[Scraper] Interaction simulation skipped:', e.message);
     }
   }
 
