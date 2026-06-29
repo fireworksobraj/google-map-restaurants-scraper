@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Google Maps Restaurant Scraper",
-  "version": "1.0.0",
-  "description": "Scrape restaurant data from Google Maps including name, address, phone, website, rating, reviews, cuisine, hours, price range, and menu items.",
+  "version": "2.0.0",
+  "description": "Advanced scraper with anti-detection features. Extract restaurant data from Google Maps including name, address, phone, website, rating, reviews, cuisine, hours, price range, and menu items.",
   "permissions": [
     "activeTab",
     "storage",
