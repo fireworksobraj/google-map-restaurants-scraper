@@ -193,7 +193,7 @@ async function clearData() {
   async function downloadData(format = 'json') {
     const restaurants = await getRestaurants();
     const result = await chrome.storage.local.get('selectedFields');
-    const selectedFields = result.selectedFields || [];
+    const selectedFields = result.selectedFields || ['name', 'address', 'phone', 'website', 'rating', 'reviews', 'cuisine', 'hours', 'priceRange'];
     
     console.log(`[Background] Downloading ${restaurants.length} restaurants as ${format.toUpperCase()}`);
     
@@ -225,18 +225,20 @@ async function clearData() {
       extension = 'json';
     }
     
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const filename = `google-maps-restaurants-${timestamp}.${extension}`;
     
     console.log(`[Background] Downloading file: ${filename} (${Math.round(content.length / 1024)} KB)`);
     
+    // Service workers cannot use URL.createObjectURL, so we must use the downloads API with data URL
+    const dataUrl = format === 'json' 
+      ? `data:application/json;charset=utf-8,${encodeURIComponent(content)}`
+      : `data:text/csv;charset=utf-8,${encodeURIComponent(content)}`;
+    
     // Use downloads API to save the file with proper configuration
     try {
       const downloadId = await chrome.downloads.download({
-        url: url,
+        url: dataUrl,
         filename: filename,
         saveAs: false,  // Automatic download
         conflictAction: 'uniquify'  // Handle duplicate filenames
@@ -250,9 +252,6 @@ async function clearData() {
           console.log('[Background] Download state:', items[0].state);
         }
       });
-      
-      // Clean up the object URL after a delay
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
       
     } catch (error) {
       console.error('[Background] Download API failed:', error);
@@ -273,12 +272,8 @@ async function clearData() {
         }
       } catch (fallbackError) {
         console.error('[Background] Fallback also failed:', fallbackError);
-        // Last resort: log URL for manual download
-        console.log('[Background] Manual download URL (copy to browser):', url);
-        console.log('[Background] Filename:', filename);
-        alert(`Download failed automatically. File is ready at:\n${url}\n\nRight-click and "Save link as" to download.`);
+        alert(`Download failed automatically. Please open a Google Maps tab and try again.`);
       }
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
     }
   }
 
