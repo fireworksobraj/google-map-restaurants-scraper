@@ -19,6 +19,11 @@
   const MAX_REVIEWS_TO_SCRAPE = 10; // Maximum reviews to extract per restaurant
   const MAX_MENU_ITEMS_TO_SCRAPE = 50; // Maximum menu items to extract
   
+  // Initialize global storage for scraped restaurant objects
+  if (typeof window.scrapedRestaurantMap === 'undefined') {
+    window.scrapedRestaurantMap = new Map();
+  }
+  
   // Anti-detection: Randomized timing configuration - ENHANCED
   const TIMING_CONFIG = {
     minScrollDelay: 2500,      // Minimum delay between scrolls (ms) - increased
@@ -193,6 +198,22 @@
       startScraping();
     } else if (message.type === 'STOP_SCRAPING') {
       stopScraping();
+    } else if (message.type === 'DOWNLOAD_FILE') {
+      // Handle download request from background script
+      try {
+        const blob = new Blob([message.content], { type: message.mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = message.filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        console.log('[Content] Download triggered successfully');
+      } catch (error) {
+        console.error('[Content] Download failed:', error);
+      }
     }
     sendResponse({ received: true });
   });
@@ -481,6 +502,9 @@
             restaurant.scrapedAt = new Date().toISOString();
             
             console.log(`[Scraper] Found: ${restaurant.name}`);
+            
+            // Store the full restaurant object in the Map for later export
+            window.scrapedRestaurantMap.set(key, restaurant);
             
             // Send to background for storage with slight random delay
             await delay(80 + Math.random() * 120);
@@ -808,12 +832,40 @@
   }
 
   async function saveResults() {
-    // Results are saved incrementally during scraping
-    // This method ensures final state is persisted
+    // Convert Map to array for processing (contains full restaurant objects)
+    const restaurantArray = window.scrapedRestaurantMap 
+      ? Array.from(window.scrapedRestaurantMap.values())
+      : [];
+    
+    console.log(`[Scraper] Saving ${restaurantArray.length} restaurants to storage...`);
+    
+    // Send all scraped restaurants to background for storage
+    if (restaurantArray.length > 0) {
+      try {
+        await chrome.runtime.sendMessage({
+          type: 'SAVE_RESTAURANTS',
+          data: restaurantArray
+        });
+        
+        console.log('[Scraper] Restaurants saved to storage successfully');
+        
+        // Update status to indicate data is ready for export
+        updateStatus(`Complete! ${restaurantArray.length} restaurants saved. Use popup to download.`, 'success');
+        
+      } catch (error) {
+        console.error('[Scraper] Error saving restaurants:', error);
+        updateStatus(`Saved ${restaurantArray.length} restaurants. Download from popup.`, 'warning');
+      }
+    } else {
+      updateStatus('No restaurants were scraped.', 'warning');
+    }
+    
+    // Notify background script that scraping is complete
     chrome.runtime.sendMessage({
-      type: 'GET_STATUS'
+      type: 'SCRAPING_COMPLETE',
+      count: restaurantArray.length
     }, response => {
-      console.log('Final status:', response);
+      console.log('[Scraper] Final status notification sent:', response);
     });
   }
 
