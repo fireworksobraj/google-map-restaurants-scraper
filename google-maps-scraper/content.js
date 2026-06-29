@@ -1,5 +1,6 @@
 // Content script for Google Maps Restaurant Scraper
 // Handles DOM interaction, data extraction, and auto-scrolling
+// Includes advanced anti-detection techniques
 
 (function() {
   'use strict';
@@ -11,8 +12,31 @@
   let scrollAttempts = 0;
   let selectedFields = []; // Fields selected by user
   const MAX_SCROLL_ATTEMPTS = 50;
-  const SCROLL_DELAY = 1500; // ms between scrolls
   const BATCH_SIZE = 10; // Process restaurants in batches
+  
+  // Anti-detection: Randomized timing configuration
+  const TIMING_CONFIG = {
+    minScrollDelay: 2000,      // Minimum delay between scrolls (ms)
+    maxScrollDelay: 5000,      // Maximum delay between scrolls (ms)
+    minScrollStep: 0.3,        // Minimum scroll percentage per action
+    maxScrollStep: 0.7,        // Maximum scroll percentage per action
+    humanPauseChance: 0.3,     // Chance to add extra "human" pause
+    extraPauseMin: 1000,       // Extra pause minimum (ms)
+    extraPauseMax: 4000,       // Extra pause maximum (ms)
+    requestTimeout: 30000,     // Timeout for requests (ms)
+    rateLimitBackoff: 60000,   // Initial backoff on rate limit (ms)
+    maxBackoff: 300000,        // Maximum backoff (5 minutes)
+    consecutiveFailThreshold: 3, // Failures before triggering backoff
+    sessionDurationLimit: 900000 // Max session duration (15 minutes)
+  };
+  
+  // Session tracking for anti-detection
+  let sessionStartTime = null;
+  let consecutiveFailures = 0;
+  let currentBackoff = 0;
+  let totalRestaurantsFound = 0;
+  let lastScrollHeight = 0;
+  let scrollPattern = []; // Track scroll pattern for randomness
   
   // All available field names
   const ALL_FIELDS = [
@@ -183,6 +207,7 @@
   }
 
   async function scrapeRestaurants() {
+    sessionStartTime = Date.now();
     const scrollContainer = findScrollContainer();
     
     if (!scrollContainer) {
@@ -190,40 +215,71 @@
       return;
     }
 
-    // First, scroll to load initial content
+    // First, scroll to load initial content with human-like delay
     updateStatus('Loading initial results...', 'info');
-    await scrollToBottom(scrollContainer);
-    await delay(1000);
+    await humanLikeScroll(scrollContainer);
+    await randomDelay(2000, 4000);
 
     // Extract restaurants from current view
     await extractVisibleRestaurants();
 
-    // Continue scrolling and extracting
+    // Continue scrolling and extracting with anti-detection
     let lastCount = scrapedRestaurants.size;
     let noProgressCount = 0;
+    let consecutiveErrors = 0;
 
     while (!shouldStop && scrollAttempts < MAX_SCROLL_ATTEMPTS && noProgressCount < 5) {
+      // Check session duration limit
+      if (Date.now() - sessionStartTime > TIMING_CONFIG.sessionDurationLimit) {
+        updateStatus('Session timeout reached. Consider restarting.', 'warning');
+        break;
+      }
+
       updateStatus(`Scrolling... (${scrapedRestaurants.size} found)`, 'info');
       
       const previousHeight = scrollContainer.scrollHeight;
-      await scrollToBottom(scrollContainer);
       
-      // Wait for content to load
-      await delay(SCROLL_DELAY);
-      
-      // Check if we've reached the bottom
-      const newHeight = scrollContainer.scrollHeight;
-      if (newHeight === previousHeight) {
-        noProgressCount++;
-      } else {
-        noProgressCount = 0;
-        // Extract newly visible restaurants
-        await extractVisibleRestaurants();
+      try {
+        await humanLikeScroll(scrollContainer);
         
-        if (scrapedRestaurants.size > lastCount) {
-          lastCount = scrapedRestaurants.size;
-          updateProgress(scrapedRestaurants.size, scrapedRestaurants.size + 20); // Estimate
+        // Wait for content to load with randomized delay
+        await randomDelay(TIMING_CONFIG.minScrollDelay, TIMING_CONFIG.maxScrollDelay);
+        
+        // Occasionally add extra human-like pause
+        if (Math.random() < TIMING_CONFIG.humanPauseChance) {
+          updateStatus('Pausing briefly...', 'info');
+          await randomDelay(TIMING_CONFIG.extraPauseMin, TIMING_CONFIG.extraPauseMax);
         }
+        
+        // Check if we've reached the bottom
+        const newHeight = scrollContainer.scrollHeight;
+        if (newHeight === previousHeight || newHeight === lastScrollHeight) {
+          noProgressCount++;
+          consecutiveErrors++;
+          
+          // Apply backoff on consecutive failures
+          if (consecutiveErrors >= TIMING_CONFIG.consecutiveFailThreshold) {
+            updateStatus('Rate limit detected. Waiting...', 'warning');
+            await delay(Math.min(currentBackoff * 2 || TIMING_CONFIG.rateLimitBackoff, TIMING_CONFIG.maxBackoff));
+            consecutiveErrors = 0;
+          }
+        } else {
+          noProgressCount = 0;
+          consecutiveErrors = 0;
+          lastScrollHeight = newHeight;
+          
+          // Extract newly visible restaurants
+          await extractVisibleRestaurants();
+          
+          if (scrapedRestaurants.size > lastCount) {
+            lastCount = scrapedRestaurants.size;
+            updateProgress(scrapedRestaurants.size, scrapedRestaurants.size + 20); // Estimate
+          }
+        }
+      } catch (error) {
+        console.error('Scroll error:', error);
+        consecutiveErrors++;
+        await randomDelay(1000, 3000);
       }
       
       scrollAttempts++;
@@ -273,6 +329,31 @@
     });
   }
 
+  // Human-like scroll with variable speed and pauses
+  async function humanLikeScroll(container) {
+    const startHeight = container.scrollTop;
+    const targetHeight = container.scrollHeight * (TIMING_CONFIG.minScrollStep + Math.random() * (TIMING_CONFIG.maxScrollStep - TIMING_CONFIG.minScrollStep));
+    const steps = 3 + Math.floor(Math.random() * 5); // 3-7 steps for smoother scroll
+    const stepSize = (targetHeight - startHeight) / steps;
+    
+    for (let i = 0; i < steps; i++) {
+      if (shouldStop) break;
+      container.scrollTop += stepSize;
+      // Small random delay between scroll steps to mimic human behavior
+      await delay(50 + Math.random() * 150);
+    }
+    
+    // Final scroll to bottom
+    container.scrollTop = container.scrollHeight;
+    await delay(300);
+  }
+
+  // Random delay between min and max values
+  function randomDelay(min, max) {
+    const delayTime = Math.floor(Math.random() * (max - min + 1)) + min;
+    return delay(delayTime);
+  }
+
   function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -280,23 +361,69 @@
   async function extractVisibleRestaurants() {
     const restaurantCards = findAllRestaurantCards();
     
-    for (const card of restaurantCards) {
+    // Process cards in batches with random delays to avoid detection
+    for (let i = 0; i < restaurantCards.length; i += BATCH_SIZE) {
       if (shouldStop) break;
       
-      const restaurant = extractRestaurantData(card);
-      if (restaurant && restaurant.name) {
-        const key = `${restaurant.name}|${restaurant.address || ''}`;
-        if (!scrapedRestaurants.has(key)) {
-          scrapedRestaurants.add(key);
-          restaurant.scrapedAt = new Date().toISOString();
-          
-          // Send to background for storage
-          chrome.runtime.sendMessage({
-            type: 'SAVE_RESTAURANTS',
-            data: [restaurant]
-          });
+      const batch = restaurantCards.slice(i, i + BATCH_SIZE);
+      
+      for (const card of batch) {
+        if (shouldStop) break;
+        
+        // Randomly interact with card to simulate user behavior
+        if (Math.random() < 0.1) { // 10% chance to "hover" over card
+          simulateUserInteraction(card);
+        }
+        
+        const restaurant = extractRestaurantData(card);
+        if (restaurant && restaurant.name) {
+          const key = `${restaurant.name}|${restaurant.address || ''}`;
+          if (!scrapedRestaurants.has(key)) {
+            scrapedRestaurants.add(key);
+            totalRestaurantsFound++;
+            restaurant.scrapedAt = new Date().toISOString();
+            
+            // Send to background for storage with slight random delay
+            await delay(50 + Math.random() * 100);
+            try {
+              chrome.runtime.sendMessage({
+                type: 'SAVE_RESTAURANTS',
+                data: [restaurant]
+              });
+            } catch (e) {
+              console.warn('Failed to send restaurant data:', e);
+            }
+          }
         }
       }
+      
+      // Add delay between batches
+      if (i + BATCH_SIZE < restaurantCards.length) {
+        await randomDelay(200, 500);
+      }
+    }
+  }
+
+  // Simulate user interaction (hover/focus) to appear more human-like
+  function simulateUserInteraction(element) {
+    try {
+      // Scroll element into view if needed
+      if (element.offsetParent !== null) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Dispatch mouse events to simulate hover
+        const events = ['mouseenter', 'mouseover', 'mousemove', 'focus'];
+        events.forEach(eventType => {
+          const event = new MouseEvent(eventType, {
+            bubbles: true,
+            cancelable: true,
+            view: window
+          });
+          element.dispatchEvent(event);
+        });
+      }
+    } catch (e) {
+      // Silently fail - interaction simulation is optional
     }
   }
 
